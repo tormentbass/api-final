@@ -6,3 +6,4 @@ scikit-learn
 joblib
 pyarrow
 gunicorn
+xgboost
