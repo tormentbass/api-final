@@ -8,5 +8,4 @@ pyarrow
 gunicorn
 xgboost
 requests
-supabase-py
 python-dotenv
