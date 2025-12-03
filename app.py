@@ -4,6 +4,8 @@
 # EXECUÇÃO: uvicorn app:app --reload
 # ==============================================================================
 
+from api_client import buscar_dados_partida
+from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import List
@@ -83,3 +85,33 @@ async def get_rankings(date: str = Query(..., example="2024-10-25 15:00:00", des
         return rankings
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro interno do servidor: {str(e)}")
+# ================================
+# ROTA DE PREVISÃO COM DADOS REAIS
+# ================================
+
+class MatchInput(BaseModel):
+    match_id: int
+
+@app.post("/predict/match", tags=["Previsão"])
+async def predict_single_match(match: MatchInput):
+    try:
+        # 1. pega os dados reais da API-Football (RapidAPI)
+        dados_brutos = buscar_dados_partida(match.match_id)
+
+        if not dados_brutos:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dados da partida {match.match_id} não encontrados na API externa."
+            )
+
+        # 2. FASE DE TESTE: apenas retornamos os dados crus
+        return {
+            "status": "SUCESSO",
+            "dados_futebol": dados_brutos
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
