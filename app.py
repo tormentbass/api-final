@@ -83,7 +83,7 @@ async def rankings(date: str = Query(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-#teste da API
+#Não sei pra que é essa parte
 
 @app.route("/test-api-football")
 def test_api_football():
@@ -117,4 +117,41 @@ def test_api_football():
 
     except Exception as e:
         print("DEBUG-ERROR:", str(e))  # log
+        return {"error": str(e)}
+
+
+# Teste da Api-football
+
+@app.route("/test-api-football")
+def test_api_football():
+    import requests, os
+    try:
+        key = os.getenv("API_FOOTBALL_KEY")
+        host = "api-football-v1.p.rapidapi.com"
+
+        print("DEBUG-KEY:", key)
+        print("DEBUG-HOST:", host)
+
+        url = "https://api-football-v1.p.rapidapi.com/v3/timezone"
+
+        headers = {
+            "x-rapidapi-key": key,
+            "x-rapidapi-host": host,
+        }
+
+        print("DEBUG-HEADERS:", headers)
+
+        r = requests.get(url, headers=headers, timeout=10)
+
+        print("DEBUG-STATUS:", r.status_code)
+        print("DEBUG-RESPONSE:", r.text)
+
+        return {
+            "status": r.status_code,
+            "response": r.text,
+            "key_empty": key is None
+        }
+
+    except Exception as e:
+        print("DEBUG-ERROR:", str(e))
         return {"error": str(e)}
