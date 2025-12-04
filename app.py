@@ -88,20 +88,33 @@ async def rankings(date: str = Query(...)):
 @app.route("/test-api-football")
 def test_api_football():
     import requests, os
-
-    url = "https://api-football-v1.p.rapidapi.com/v3/timezone"
-    headers = {
-        "x-rapidapi-key": os.getenv("API_FOOTBALL_KEY"),
-        "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
-    }
-
     try:
+        key = os.getenv("API_FOOTBALL_KEY")
+        host = "api-football-v1.p.rapidapi.com"
+
+        print("DEBUG-KEY:", key)  # log
+        print("DEBUG-HOST:", host)
+
+        url = "https://api-football-v1.p.rapidapi.com/v3/timezone"
+
+        headers = {
+            "x-rapidapi-key": key,
+            "x-rapidapi-host": host,
+        }
+
+        print("DEBUG-HEADERS:", headers)
+
         r = requests.get(url, headers=headers, timeout=10)
+
+        print("DEBUG-STATUS:", r.status_code)
+        print("DEBUG-RESPONSE:", r.text)
+
         return {
             "status": r.status_code,
             "response": r.text,
-            "key_empty": os.getenv("API_FOOTBALL_KEY") is None
+            "key_empty": key is None
         }
-    except Exception as e:
-        return {"error": str(e)}
 
+    except Exception as e:
+        print("DEBUG-ERROR:", str(e))  # log
+        return {"error": str(e)}
