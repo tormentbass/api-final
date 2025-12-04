@@ -7,7 +7,8 @@ from urllib3.util.retry import Retry
 
 RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "api-football-v1.p.rapidapi.com")
-BASE_URL = "https://api-football-v1.p.rapidapi.com/v3/"
+BASE_URL = os.environ.get("BASE_URL", "https://api-football-v1.p.rapidapi.com/v3/")
+
 
 HEADERS = {
     "X-RapidAPI-Key": RAPIDAPI_KEY,
