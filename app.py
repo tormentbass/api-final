@@ -81,3 +81,27 @@ async def rankings(date: str = Query(...)):
         return ranks
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+#teste da API
+
+@app.route("/test-api-football")
+def test_api_football():
+    import requests, os
+
+    url = "https://api-football-v1.p.rapidapi.com/v3/timezone"
+    headers = {
+        "x-rapidapi-key": os.getenv("API_FOOTBALL_KEY"),
+        "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
+    }
+
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        return {
+            "status": r.status_code,
+            "response": r.text,
+            "key_empty": os.getenv("API_FOOTBALL_KEY") is None
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
