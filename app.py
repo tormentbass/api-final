@@ -1,117 +1,83 @@
 # ==============================================================================
 # ARQUIVO: app.py
-# CONTEÚDO: Definição da API usando FastAPI
-# EXECUÇÃO: uvicorn app:app --reload
 # ==============================================================================
-
-from api_client import buscar_dados_partida
-from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import List
-import engine # Importa todo o seu motor de IA
 
-# --- 1. CONFIGURAÇÃO DA API ---
+import engine
+from api_client import buscar_dados_partida
+
 app = FastAPI(
     title="Análise Esportiva IA",
-    description="API de Previsões e Rankings do Motor de IA para Site e Telegram.",
+    description="API de Previsões e Rankings",
     version="1.0.0"
 )
 
-# --- 2. DEFINIÇÃO DOS MODELOS DE DADOS (Pydantic) ---
-
-# Schema para entrada de uma única partida
-class MatchInput(BaseModel):
-    home_team: str = Field(..., example="Chelsea", description="Nome do time da casa.")
-    away_team: str = Field(..., example="Arsenal", description="Nome do time de fora.")
-    date: str = Field(..., example="2024-10-25 15:00:00", description="Data e hora da referência para análise histórica.")
-
-# Schema para entrada de múltiplas partidas (Batch)
-class BatchInput(BaseModel):
-    matches: List[MatchInput]
-    date: str = Field(..., example="2024-10-25 15:00:00", description="Data de referência para todos os jogos do lote.")
-
-
-# --- 3. ENDPOINTS PRINCIPAIS ---
-
-@app.get("/", tags=["Saúde"])
-def read_root():
-    """Verifica se a API está no ar e se o motor de IA foi carregado."""
-    status = "OK" if engine.model is not None else "ERRO - Componentes não carregados"
+# ------------------------------------------------------------------------------
+# 1) ENDPOINT DE SAÚDE
+# ------------------------------------------------------------------------------
+@app.get("/")
+def root():
+    status = "OK" if engine.model is not None else "ERRO"
     return {"api_status": status, "message": "Motor de Análise Esportiva ativo!"}
 
-# --- 3.1. ENDPOINT: Previsão de Partida Única ---
+# ------------------------------------------------------------------------------
+# 2) SISTEMA 1: IA TRADICIONAL (Chelsea x Arsenal)
+# ------------------------------------------------------------------------------
+class MatchInputIA(BaseModel):
+    home_team: str
+    away_team: str
+    date: str
 
-@app.post("/predict/match", tags=["Previsão"])
-async def predict_single_match(match: MatchInput):
-    """Gera o relatório de previsão completo para uma única partida."""
+@app.post("/predict/teams", tags=["Previsão - IA Interna"])
+async def predict_teams(match: MatchInputIA):
     try:
-        relatorio = engine.gerar_relatorio_json(match.home_team, match.away_team, match.date)
-        if relatorio.get("status") == "ERRO":
-             raise HTTPException(status_code=404, detail=relatorio.get("mensagem"))
+        relatorio = engine.gerar_relatorio_json(
+            match.home_team,
+            match.away_team,
+            match.date
+        )
         return relatorio
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro interno do servidor: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# --- 3.2. ENDPOINT: Previsão em Lote ---
 
-@app.post("/predict/batch", tags=["Previsão"])
-async def predict_matches_batch(batch: BatchInput):
-    """Gera relatórios de previsão para um lote de partidas."""
-    try:
-        jogos = [(m.home_team, m.away_team) for m in batch.matches]
-        relatorios = engine.predict_batch(jogos, batch.date)
-        
-        erros = [r for r in relatorios if r.get("status") == "ERRO"]
-        
-        return {
-            "status": "SUCESSO",
-            "total_processados": len(relatorios),
-            "total_com_erro": len(erros),
-            "relatorios": relatorios
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro interno do servidor: {str(e)}")
-
-# --- 3.3. ENDPOINT: Rankings Estatísticos ---
-
-@app.get("/stats/rankings", tags=["Análise Estatística"])
-async def get_rankings(date: str = Query(..., example="2024-10-25 15:00:00", description="Data de referência para o ranking.")):
-    """Retorna os rankings de Força (Net xG) e Valor (Gols - xG)."""
-    try:
-        rankings = engine.gerar_ranking_forca(date, num_times=20) 
-        if "erro" in rankings:
-             raise HTTPException(status_code=404, detail=rankings.get("erro"))
-        return rankings
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro interno do servidor: {str(e)}")
-# ================================
-# ROTA DE PREVISÃO COM DADOS REAIS
-# ================================
-
-class MatchInput(BaseModel):
+# ------------------------------------------------------------------------------
+# 3) SISTEMA 2: DADOS REAIS (API-Football)
+# ------------------------------------------------------------------------------
+class MatchInputID(BaseModel):
     match_id: int
 
-@app.post("/predict/match", tags=["Previsão"])
-async def predict_single_match(match: MatchInput):
+@app.post("/predict/match", tags=["Previsão - Dados Reais"])
+async def predict_match(match: MatchInputID):
     try:
-        # 1. pega os dados reais da API-Football (RapidAPI)
-        dados_brutos = buscar_dados_partida(match.match_id)
+        dados = buscar_dados_partida(match.match_id)
+        if not dados:
+            raise HTTPException(status_code=404, detail="Partida não encontrada")
+        return {"status": "SUCESSO", "dados": dados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        if not dados_brutos:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Dados da partida {match.match_id} não encontrados na API externa."
-            )
 
-        # 2. FASE DE TESTE: apenas retornamos os dados crus
-        return {
-            "status": "SUCESSO",
-            "dados_futebol": dados_brutos
-        }
+# ------------------------------------------------------------------------------
+# 4) ROTA DE TESTE (GET) → usado pelo Lovable
+# ------------------------------------------------------------------------------
+@app.get("/partida/{match_id}", tags=["Dados - API Externa"])
+async def partida(match_id: int):
+    dados = buscar_dados_partida(match_id)
+    if not dados:
+        raise HTTPException(status_code=404, detail="Partida não encontrada")
+    return dados
 
-    except HTTPException:
-        raise
 
+# ------------------------------------------------------------------------------
+# 5) RANKINGS
+# ------------------------------------------------------------------------------
+@app.get("/stats/rankings", tags=["Rankings"])
+async def rankings(date: str = Query(...)):
+    try:
+        ranks = engine.gerar_ranking_forca(date)
+        return ranks
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
