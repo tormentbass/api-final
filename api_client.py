@@ -6,27 +6,30 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ===============================
-# VARIÁVEIS DE AMBIENTE
+# VARIÁVEIS DE AMBIENTE (CORRETAS)
 # ===============================
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
-RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "api-football-v1.p.rapidapi.com")
-BASE_URL = os.environ.get("BASE_URL", "https://api-football-v1.p.rapidapi.com/v3/")
+API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")  # CHAVE CERTA
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST", "api-football-v1.p.rapidapi.com")
+
+BASE_URL = "https://api-football-v1.p.rapidapi.com/v3/"
+
 
 # ===============================
-# DEBUG – ISSO VAI APARECER NOS LOGS DO RENDER
+# DEBUG NO RENDER
 # ===============================
-print("====== DEBUG VARIÁVEIS DE AMBIENTE ======")
-print("RAPIDAPI_KEY está definida? ", "SIM" if RAPIDAPI_KEY else "NÃO!")
+print("====== DEBUG ENV ======")
+print("API_FOOTBALL_KEY definida?", "SIM" if API_FOOTBALL_KEY else "NÃO!")
 print("RAPIDAPI_HOST:", RAPIDAPI_HOST)
 print("BASE_URL:", BASE_URL)
-print("=========================================")
+print("========================")
+
 
 HEADERS = {
-    "X-RapidAPI-Key": RAPIDAPI_KEY,
-    "X-RapidAPI-Host": RAPIDAPI_HOST
+    "x-rapidapi-key": API_FOOTBALL_KEY,
+    "x-rapidapi-host": RAPIDAPI_HOST
 }
 
-# Sessão com retry inteligente
+# Sessão com retry
 session = requests.Session()
 retries = Retry(
     total=3,
@@ -37,40 +40,40 @@ session.mount("https://", HTTPAdapter(max_retries=retries))
 
 
 # ===================================================
-# FUNÇÃO PRINCIPAL: BUSCAR DADOS REAIS DA PARTIDA
+# FUNÇÃO PRINCIPAL: BUSCAR DADOS DA PARTIDA
 # ===================================================
 def buscar_dados_partida(match_id: int) -> Optional[dict]:
-    # debug inicial
-    print(f"\n[DEBUG] Buscando dados da partida ID = {match_id}")
-    print("[DEBUG] Endpoint montado:", f"{BASE_URL}fixtures")
-    print("[DEBUG] HEADERS enviados:", HEADERS)
 
-    if not RAPIDAPI_KEY:
-        raise RuntimeError("RAPIDAPI_KEY não configurada no ambiente!")
+    print(f"\n[API] Buscando partida {match_id}")
+    print("[API] HEADERS:", HEADERS)
+
+    if not API_FOOTBALL_KEY:
+        raise RuntimeError("API_FOOTBALL_KEY não configurada no Render!")
 
     endpoint = f"{BASE_URL}fixtures"
     params = {"id": match_id}
 
     try:
         resp = session.get(endpoint, headers=HEADERS, params=params, timeout=10)
-        print("[DEBUG] Status code recebido:", resp.status_code)
+        print("[API] Status:", resp.status_code)
 
         resp.raise_for_status()
         data = resp.json()
 
-        # debug dados crus
-        print("[DEBUG] JSON recebido:", data)
-
-        if data.get("results", 0) > 0 and data.get("response"):
+        if (
+            data.get("results", 0) > 0
+            and isinstance(data.get("response"), list)
+            and len(data["response"]) > 0
+        ):
             return data["response"][0]
 
-        print("[DEBUG] Nenhum dado encontrado para essa partida.")
+        print("[API] Nenhum dado encontrado para essa partida.")
         return None
 
     except requests.HTTPError as e:
-        print(f"[api_client] HTTPError: {e} - status {getattr(e.response,'status_code',None)}")
+        print(f"[API] HTTPError: {e}")
         return None
 
     except Exception as e:
-        print(f"[api_client] Erro desconhecido: {e}")
+        print(f"[API] Erro desconhecido:", e)
         return None
