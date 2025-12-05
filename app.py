@@ -91,34 +91,27 @@ async def rankings(date: str = Query(...)):
 # ------------------------------------------------------------------------------
 # 6) TESTE COMPLETO DA API-FOOTBALL (debug real)
 # ------------------------------------------------------------------------------
-@app.get("/test-api-football", tags=["Debug"])
+@app.get("/test-api-football")
 def test_api_football():
+    try:
+        key = os.getenv("API_FOOTBALL_KEY")
+        host = os.getenv("API_FOOTBALL_HOST", "v3.football.api-sports.io")
 
-    API_KEY = os.getenv("API_FOOTBALL_KEY")
-    API_HOST = os.getenv("RAPIDAPI_HOST", "api-football-v1.p.rapidapi.com")
+        url = "https://v3.football.api-sports.io/status"
 
-    if not API_KEY:
-        return {
-            "error": "API_FOOTBALL_KEY not found",
-            "fix": "Defina a variável no Render → Environment → API_FOOTBALL_KEY"
+        headers = {
+            "x-apisports-key": key,
+            "x-rapidapi-host": host
         }
 
-    url = "https://api-football-v1.p.rapidapi.com/v3/status"
-
-    headers = {
-        "x-rapidapi-key": API_KEY,
-        "x-rapidapi-host": API_HOST
-    }
-
-    try:
         r = requests.get(url, headers=headers, timeout=10)
 
         return {
             "status_code": r.status_code,
             "response": r.text,
-            "key_last4": API_KEY[-4:], 
-            "host_used": API_HOST
+            "key_last4": key[-4:] if key else "NONE",
+            "host_used": host
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
