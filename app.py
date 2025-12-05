@@ -3,12 +3,12 @@
 # ==============================================================================
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from typing import List
 import os
 import requests
 
 import engine
 from api_client import buscar_dados_partida
+
 
 app = FastAPI(
     title="Análise Esportiva IA",
@@ -26,12 +26,13 @@ def root():
 
 
 # ------------------------------------------------------------------------------
-# 2) SISTEMA 1: IA TRADIONAL (Chelsea x Arsenal)
+# 2) SISTEMA 1 – PREVISÃO IA TRADICIONAL
 # ------------------------------------------------------------------------------
 class MatchInputIA(BaseModel):
     home_team: str
     away_team: str
     date: str
+
 
 @app.post("/predict/teams", tags=["Previsão - IA Interna"])
 async def predict_teams(match: MatchInputIA):
@@ -47,10 +48,11 @@ async def predict_teams(match: MatchInputIA):
 
 
 # ------------------------------------------------------------------------------
-# 3) SISTEMA 2: DADOS REAIS (API-Football)
+# 3) SISTEMA 2 – DADOS VIA API-FOOTBALL
 # ------------------------------------------------------------------------------
 class MatchInputID(BaseModel):
     match_id: int
+
 
 @app.post("/predict/match", tags=["Previsão - Dados Reais"])
 async def predict_match(match: MatchInputID):
@@ -64,7 +66,7 @@ async def predict_match(match: MatchInputID):
 
 
 # ------------------------------------------------------------------------------
-# 4) ROTA DE TESTE SIMPLES DE PARTIDA (Lovable)
+# 4) CONSULTA DE PARTIDA – TESTE SIMPLES
 # ------------------------------------------------------------------------------
 @app.get("/partida/{match_id}", tags=["Dados - API Externa"])
 async def partida(match_id: int):
@@ -87,37 +89,36 @@ async def rankings(date: str = Query(...)):
 
 
 # ------------------------------------------------------------------------------
-# 6) TESTE API-FOOTBALL (DEBUG TOTAL)
+# 6) TESTE COMPLETO DA API-FOOTBALL (debug real)
 # ------------------------------------------------------------------------------
 @app.get("/test-api-football", tags=["Debug"])
 def test_api_football():
-    try:
-        key = os.getenv("API_FOOTBALL_KEY")
-        host = "api-football-v1.p.rapidapi.com"
 
-        print("DEBUG-KEY:", key)
-        print("DEBUG-HOST:", host)
+    API_KEY = os.getenv("API_FOOTBALL_KEY")
+    API_HOST = os.getenv("RAPIDAPI_HOST", "api-football-v1.p.rapidapi.com")
 
-        url = "https://api-football-v1.p.rapidapi.com/v3/timezone"
-
-        headers = {
-            "x-rapidapi-key": key,
-            "x-rapidapi-host": host,
+    if not API_KEY:
+        return {
+            "error": "API_FOOTBALL_KEY not found",
+            "fix": "Defina a variável no Render → Environment → API_FOOTBALL_KEY"
         }
 
-        print("DEBUG-HEADERS:", headers)
+    url = "https://api-football-v1.p.rapidapi.com/v3/status"
 
+    headers = {
+        "x-rapidapi-key": API_KEY,
+        "x-rapidapi-host": API_HOST
+    }
+
+    try:
         r = requests.get(url, headers=headers, timeout=10)
 
-        print("DEBUG-STATUS:", r.status_code)
-        print("DEBUG-RESPONSE:", r.text)
-
         return {
-            "status": r.status_code,
+            "status_code": r.status_code,
             "response": r.text,
-            "key_empty": key is None
+            "key_last4": API_KEY[-4:], 
+            "host_used": API_HOST
         }
 
     except Exception as e:
-        print("DEBUG-ERROR:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
