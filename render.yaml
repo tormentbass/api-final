@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: api-final
-    runtime: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "bash start.sh"
-    envVars:
-      PYTHON_VERSION: 3.10.12
