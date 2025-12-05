@@ -2,8 +2,10 @@
 # ARQUIVO: app.py
 # ==============================================================================
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List
+import os
+import requests
 
 import engine
 from api_client import buscar_dados_partida
@@ -22,8 +24,9 @@ def root():
     status = "OK" if engine.model is not None else "ERRO"
     return {"api_status": status, "message": "Motor de Análise Esportiva ativo!"}
 
+
 # ------------------------------------------------------------------------------
-# 2) SISTEMA 1: IA TRADICIONAL (Chelsea x Arsenal)
+# 2) SISTEMA 1: IA TRADIONAL (Chelsea x Arsenal)
 # ------------------------------------------------------------------------------
 class MatchInputIA(BaseModel):
     home_team: str
@@ -61,7 +64,7 @@ async def predict_match(match: MatchInputID):
 
 
 # ------------------------------------------------------------------------------
-# 4) ROTA DE TESTE (GET) → usado pelo Lovable
+# 4) ROTA DE TESTE SIMPLES DE PARTIDA (Lovable)
 # ------------------------------------------------------------------------------
 @app.get("/partida/{match_id}", tags=["Dados - API Externa"])
 async def partida(match_id: int):
@@ -83,48 +86,11 @@ async def rankings(date: str = Query(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-#Não sei pra que é essa parte
-
-@app.route("/test-api-football")
+# ------------------------------------------------------------------------------
+# 6) TESTE API-FOOTBALL (DEBUG TOTAL)
+# ------------------------------------------------------------------------------
+@app.get("/test-api-football", tags=["Debug"])
 def test_api_football():
-    import requests, os
-    try:
-        key = os.getenv("API_FOOTBALL_KEY")
-        host = "api-football-v1.p.rapidapi.com"
-
-        print("DEBUG-KEY:", key)  # log
-        print("DEBUG-HOST:", host)
-
-        url = "https://api-football-v1.p.rapidapi.com/v3/timezone"
-
-        headers = {
-            "x-rapidapi-key": key,
-            "x-rapidapi-host": host,
-        }
-
-        print("DEBUG-HEADERS:", headers)
-
-        r = requests.get(url, headers=headers, timeout=10)
-
-        print("DEBUG-STATUS:", r.status_code)
-        print("DEBUG-RESPONSE:", r.text)
-
-        return {
-            "status": r.status_code,
-            "response": r.text,
-            "key_empty": key is None
-        }
-
-    except Exception as e:
-        print("DEBUG-ERROR:", str(e))  # log
-        return {"error": str(e)}
-
-
-# Teste da Api-football
-
-@app.route("/test-api-football")
-def test_api_football():
-    import requests, os
     try:
         key = os.getenv("API_FOOTBALL_KEY")
         host = "api-football-v1.p.rapidapi.com"
@@ -154,4 +120,4 @@ def test_api_football():
 
     except Exception as e:
         print("DEBUG-ERROR:", str(e))
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
