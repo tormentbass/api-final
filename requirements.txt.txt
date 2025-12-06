@@ -1,0 +1,16 @@
+fastapi==0.110.0
+uvicorn==0.30.0
+gunicorn==22.0.0
+
+pandas==1.5.3
+numpy==1.23.5
+
+scikit-learn==1.2.2
+xgboost==1.7.3
+joblib==1.2.0
+
+pyarrow==12.0.1
+
+requests==2.31.0
+python-dotenv==1.0.0
+urllib3==1.26.18
