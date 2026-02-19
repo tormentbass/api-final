@@ -16,6 +16,25 @@ from pydantic import BaseModel
 from api_client import buscar_dados_partida
 from engine import gerar_relatorio_json, gerar_ranking_forca
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware # Adicione isso
+
+app = FastAPI()
+
+# --- COPIE ISSO ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Permite que o Lovable acesse sua API
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    return {"status": "SaaS de Analise Online", "engine": "Rodando"}
+# ------------------
+
 # ====================================================================================================
 # CARREGA MAPEAMENTO DE NOMES
 # ====================================================================================================
