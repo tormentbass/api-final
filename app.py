@@ -182,3 +182,31 @@ async def debug_nome(nome: str):
 @app.get("/stats/rankings")
 async def rankings(data_base: str = "2025-01-01"):
     return gerar_ranking_forca(data_base)
+
+
+
+
+
+@app.get("/jogos-hoje")
+async def listar_jogos_do_dia():
+    from datetime import date
+    import api_client
+    
+    # Pega a data de hoje no formato YYYY-MM-DD
+    hoje = date.today().isoformat()
+    
+    try:
+        # Busca os jogos na API-Football (Usando sua função robusta)
+        dados = api_client.buscar_fixtures_por_data(hoje)
+        
+        if not dados or "response" not in dados:
+            return {"status": "vazio", "jogos": []}
+            
+        # Retorna apenas o que o Lovable precisa para não pesar
+        return {
+            "status": "sucesso",
+            "data": hoje,
+            "jogos": dados["response"]
+        }
+    except Exception as e:
+        return {"status": "erro", "mensagem": str(e)}
