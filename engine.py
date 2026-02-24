@@ -1,8 +1,8 @@
 # ====================================================================================================
 # ARQUIVO: engine.py
-# VERSÃO: 1.2.0 - FIX VERSÃO ML
+# VERSÃO: 1.3.0 - ULTRA ROBUST LOAD
 # DATA: 24/02/2026
-# DESCRIÇÃO: Motor ML com correção de compatibilidade para XGBoost antigo
+# DESCRIÇÃO: Motor ML com bypass de erro de versão do XGBoost
 # ====================================================================================================
 
 import pandas as pd
@@ -26,49 +26,64 @@ features_finais = None
 df_historico = None
 
 # ====================================================================================================
-# CARREGAMENTO DE COMPONENTES (COM FIX DE VERSÃO)
+# CARREGAMENTO DE COMPONENTES (BYPASS DE VERSÃO)
 # ====================================================================================================
 def carregar_componentes():
     global model, features_finais, df_historico
 
-    print("\n========== [ENGINE] CARREGANDO COMPONENTES ==========")
-    for path in [MODEL_PATH, FEATURES_PATH, HISTORICO_PATH]:
-        print(f"[CHECK] {path}: {'OK' if os.path.exists(path) else 'NÃO ENCONTRADO'}")
-
-    # 1. Carregar Features e Histórico
+    print("\n========== [ENGINE] INICIANDO CARREGAMENTO CRÍTICO ==========")
+    
+    # 1. Carregar Dados de Apoio (Features e Parquet)
     try:
-        features_finais = joblib.load(FEATURES_PATH)
-        df_historico = pd.read_parquet(HISTORICO_PATH)
-        df_historico["match_date"] = pd.to_datetime(df_historico["match_date"])
-        print(f"[ENGINE] Histórico e Features carregados com sucesso.")
+        if os.path.exists(FEATURES_PATH):
+            features_finais = joblib.load(FEATURES_PATH)
+            print(f"[OK] Features carregadas: {len(features_finais)}")
+        
+        if os.path.exists(HISTORICO_PATH):
+            df_historico = pd.read_parquet(HISTORICO_PATH)
+            df_historico["match_date"] = pd.to_datetime(df_historico["match_date"])
+            print(f"[OK] Histórico carregado: {len(df_historico)} linhas")
     except Exception as e:
         print(f"❌ ERRO NOS DADOS: {e}")
-        return False
 
-    # 2. Carregar Modelo com Fix para 'use_label_encoder'
-    try:
-        if os.path.exists(MODEL_PATH):
+    # 2. Carregar Modelo com Técnica de Limpeza de Buffer
+    if os.path.exists(MODEL_PATH):
+        try:
+            print(f"[INFO] Tentando carregar modelo: {MODEL_PATH}")
+            # Tentativa 1: Carregamento Padrão
             model = joblib.load(MODEL_PATH)
-            print("[ENGINE] Modelo ML carregado com sucesso!")
-    except Exception as e:
-        if "use_label_encoder" in str(e):
-            print("[ENGINE] Detectado erro de versão XGBoost. Aplicando correção...")
+            
+            # Se carregou, mas tem o atributo antigo, desativa aqui
+            if hasattr(model, 'use_label_encoder'):
+                try:
+                    model.set_params(use_label_encoder=False)
+                except:
+                    delattr(model, 'use_label_encoder')
+            
+            print("[SUCCESS] Modelo carregado via Joblib!")
+            
+        except Exception as e:
+            print(f"[WARN] Falha no carregamento padrão: {e}")
+            print("[ACTION] Tentando Fallback: Limpeza de atributos antigos...")
+            
             try:
-                # Técnica de correção: Carregamos o objeto e removemos o atributo fantasma
                 import xgboost as xgb
-                raw_model = joblib.load(MODEL_PATH)
-                if hasattr(raw_model, 'use_label_encoder'):
-                    delattr(raw_model, 'use_label_encoder')
-                model = raw_model
-                print("[ENGINE] Modelo carregado com sucesso após correção de versão!")
+                # Tentativa 2: Forçar remoção de atributos incompatíveis durante o load
+                # Isso funciona em algumas versões onde o joblib falha no mapeamento
+                raw_obj = joblib.load(MODEL_PATH)
+                
+                # Se for um modelo XGBoost, removemos o lixo da versão anterior
+                if 'XGB' in str(type(raw_obj)):
+                    if hasattr(raw_obj, 'use_label_encoder'):
+                        delattr(raw_obj, 'use_label_encoder')
+                    model = raw_obj
+                    print("[SUCCESS] Modelo carregado com Limpeza de Atributos!")
             except Exception as e2:
-                print(f"❌ FALHA NA CORREÇÃO DO MODELO: {e2}")
+                print(f"❌ FALHA CRÍTICA: O arquivo .pkl é incompatível com este servidor Linux/Render.")
+                print(f"ERRO: {e2}")
                 model = None
-        else:
-            print(f"❌ ERRO DESCONHECIDO NO MODELO: {e}")
-            model = None
 
-    print("========== [ENGINE] STATUS FINAL: {'PRONTO' if model else 'FALHA'} ==========\n")
+    print(f"========== [ENGINE] STATUS: {'PRONTO' if model is not None else 'ERRO'} ==========\n")
     return True if model else False
 
 # ====================================================================================================
@@ -76,61 +91,42 @@ def carregar_componentes():
 # ====================================================================================================
 def get_latest_features(time_casa, time_fora, data_ref):
     if df_historico is None:
-        raise RuntimeError("Histórico não carregado pelo engine.")
+        return {"erro": "Histórico não carregado no servidor."}
 
     try:
-        data_ref = pd.to_datetime(data_ref, errors='coerce')
-        if pd.isna(data_ref):
-            return {"erro": f"Data inválida: {data_ref}"}
-    except Exception as e:
-        return {"erro": f"Erro ao converter data: {e}"}
+        data_ref = pd.to_datetime(data_ref)
+    except:
+        return {"erro": "Formato de data inválido. Use AAAA-MM-DD."}
 
     df_temp = df_historico[df_historico["match_date"] < data_ref]
 
     def get_last_row(team):
-        home = df_temp[df_temp["home_team"] == team].sort_values("match_date", ascending=False)
-        away = df_temp[df_temp["away_team"] == team].sort_values("match_date", ascending=False)
+        h = df_temp[df_temp["home_team"] == team].sort_values("match_date", ascending=False)
+        a = df_temp[df_temp["away_team"] == team].sort_values("match_date", ascending=False)
+        if h.empty and a.empty: return None, None
+        if h.empty: return a.iloc[0], "away"
+        if a.empty: return h.iloc[0], "home"
+        return (h.iloc[0], "home") if h.iloc[0]["match_date"] >= a.iloc[0]["match_date"] else (a.iloc[0], "away")
 
-        if home.empty and away.empty:
-            return None, None
-        if home.empty:
-            return away.iloc[0], "away"
-        if away.empty:
-            return home.iloc[0], "home"
-        return (home.iloc[0], "home") if home.iloc[0]["match_date"] >= away.iloc[0]["match_date"] else (away.iloc[0], "away")
+    row_c, pref_c = get_last_row(time_casa)
+    row_f, pref_f = get_last_row(time_fora)
 
-    row_casa, pref_casa = get_last_row(time_casa)
-    row_fora, pref_fora = get_last_row(time_fora)
+    if row_c is None or row_f is None:
+        return {"erro": f"Times não encontrados no histórico: {time_casa}/{time_fora}"}
 
-    if row_casa is None or row_fora is None:
-        return {"erro": f"Dados insuficientes para {time_casa} ou {time_fora}."}
-
-    feature_data = {}
-    for feature in features_finais:
-        try:
-            if feature.startswith("home_"):
-                src = feature.replace("home_", f"{pref_casa}_")
-                feature_data[feature] = row_casa.get(src, 0)
-            elif feature.startswith("away_"):
-                src = feature.replace("away_", f"{pref_fora}_")
-                feature_data[feature] = row_fora.get(src, 0)
-        except Exception:
-            feature_data[feature] = 0
-
-    df_features = pd.DataFrame([feature_data])
-    df_features.fillna(0, inplace=True)
-
-    net_xg_casa = df_features.get("home_roll_xg_for_5", [0])[0] - df_features.get("home_roll_xg_against_5", [0])[0]
-    net_xg_fora = df_features.get("away_roll_xg_for_5", [0])[0] - df_features.get("away_roll_xg_against_5", [0])[0]
-
+    f_dict = {}
+    for f in features_finais:
+        if f.startswith("home_"):
+            f_dict[f] = row_c.get(f.replace("home_", f"{pref_c}_"), 0)
+        elif f.startswith("away_"):
+            f_dict[f] = row_f.get(f.replace("away_", f"{pref_f}_"), 0)
+    
+    df_ret = pd.DataFrame([f_dict])[features_finais].fillna(0)
+    
     return {
-        "df_features": df_features,
-        "net_xg_casa": net_xg_casa,
-        "net_xg_fora": net_xg_fora,
-        "xg_for_casa": df_features.get("home_roll_xg_for_5", [0])[0],
-        "xg_against_casa": df_features.get("home_roll_xg_against_5", [0])[0],
-        "xg_for_fora": df_features.get("away_roll_xg_for_5", [0])[0],
-        "xg_against_fora": df_features.get("away_roll_xg_against_5", [0])[0],
+        "df_features": df_ret,
+        "net_xg_casa": f_dict.get("home_roll_xg_for_5", 0) - f_dict.get("home_roll_xg_against_5", 0),
+        "net_xg_fora": f_dict.get("away_roll_xg_for_5", 0) - f_dict.get("away_roll_xg_against_5", 0)
     }
 
 # ====================================================================================================
@@ -138,115 +134,57 @@ def get_latest_features(time_casa, time_fora, data_ref):
 # ====================================================================================================
 def gerar_relatorio_json(time_casa, time_fora, data_ref):
     if model is None:
-        return {"status": "ERRO", "mensagem": "Modelo não carregado."}
+        return {"status": "ERRO", "mensagem": "Modelo ML não disponível no servidor."}
 
     feat = get_latest_features(time_casa, time_fora, data_ref)
     if "erro" in feat:
         return {"status": "ERRO", "mensagem": feat["erro"]}
 
-    df_features = feat["df_features"]
-
     try:
-        # Garante que as colunas estejam na ordem correta que o modelo espera
-        df_features = df_features[features_finais]
-        prob = model.predict_proba(df_features)[0]
+        probs = model.predict_proba(feat["df_features"])[0]
+        res_map = {0: "Empate", 1: "Vitória Fora", 2: "Vitória Casa"}
+        idx = np.argmax(probs)
         
-        prob_casa, prob_empate, prob_fora = [f"{p*100:.2f}%" for p in prob]
-        idx = np.argmax(prob)
-        resultado_map = {0: "Empate", 1: "Vitória Fora", 2: "Vitória Casa"}
-        resultado = resultado_map.get(idx, "Empate")
-    except Exception as e:
-        return {"status": "ERRO", "mensagem": f"Erro na predição ML: {e}"}
-
-    net_c = feat["net_xg_casa"]
-    net_f = feat["net_xg_fora"]
-    diff = net_c - net_f
-
-    if diff > 0.15 and idx == 2:
-        justificativa = f"{time_casa} apresenta forte superioridade em Net xG ({net_c:.2f})."
-    elif diff < -0.15 and idx == 1:
-        justificativa = f"{time_fora} domina no Net xG ({net_f:.2f})."
-    elif abs(diff) < 0.1:
-        justificativa = "Confronto equilibrado estatisticamente."
-    else:
-        justificativa = "Previsão coerente, porém divergindo levemente do Net xG."
-
-    return {
-        "status": "SUCESSO",
-        "partida": f"{time_casa} vs {time_fora}",
-        "data_base": str(data_ref.date()) if hasattr(data_ref, 'date') else str(data_ref),
-        "previsao_final": {
-            "resultado_provavel": resultado,
-            "probabilidades": {
-                "casa": prob_casa,
-                "empate": prob_empate,
-                "fora": prob_fora,
+        return {
+            "status": "SUCESSO",
+            "partida": f"{time_casa} vs {time_fora}",
+            "previsao_final": {
+                "resultado": res_map.get(idx),
+                "probabilidades": {
+                    "casa": f"{probs[2]*100:.2f}%",
+                    "empate": f"{probs[0]*100:.2f}%",
+                    "fora": f"{probs[1]*100:.2f}%"
+                }
             },
-        },
-        "analise_estatistica": {
-            "net_xg_casa": round(net_c, 2),
-            "net_xg_fora": round(net_f, 2),
-            "diff_net_xg": round(diff, 2),
-        },
-        "justificativa": justificativa,
-    }
+            "analise_estatistica": {
+                "net_xg_casa": round(float(feat["net_xg_casa"]), 2),
+                "net_xg_fora": round(float(feat["net_xg_fora"]), 2)
+            }
+        }
+    except Exception as e:
+        return {"status": "ERRO", "mensagem": f"Erro na execução do modelo: {e}"}
 
 # ====================================================================================================
-# RANKING E BATCH
+# RANKINGS
 # ====================================================================================================
-def predict_batch(jogos, data_base):
-    return [gerar_relatorio_json(c, f, data_base) for c, f in jogos]
-
 def gerar_ranking_forca(data_base, n=10):
-    if df_historico is None:
-        return {"erro": "Histórico não carregado."}
+    if df_historico is None: return {"erro": "Sem dados."}
+    try:
+        d_ref = pd.to_datetime(data_base)
+        df_f = df_historico[df_historico["match_date"] < d_ref]
+        times = pd.concat([df_f["home_team"], df_f["away_team"]]).unique()
+        res = []
+        for t in times:
+            h = df_f[df_f["home_team"] == t].sort_values("match_date", ascending=False)
+            a = df_f[df_f["away_team"] == t].sort_values("match_date", ascending=False)
+            row = h.iloc[0] if (not h.empty and (a.empty or h.iloc[0]["match_date"] >= a.iloc[0]["match_date"])) else a.iloc[0]
+            p = "home_" if row["home_team"] == t else "away_"
+            res.append({"time": t, "net_xg_5": round(row.get(f"{p}roll_xg_for_5", 0) - row.get(f"{p}roll_xg_against_5", 0), 2)})
+        
+        final = pd.DataFrame(res).sort_values("net_xg_5", ascending=False).head(n).to_dict("records")
+        return {"ranking": final}
+    except:
+        return {"erro": "Falha ao gerar ranking."}
 
-    data_ref = pd.to_datetime(data_base, errors='coerce')
-    if pd.isna(data_ref):
-        return {"erro": f"Data inválida: {data_base}"}
-
-    df_f = df_historico[df_historico["match_date"] < data_ref]
-    times = pd.concat([df_historico["home_team"], df_historico["away_team"]]).unique()
-    ranking = []
-
-    for t in times:
-        home = df_f[df_f["home_team"] == t].sort_values("match_date", ascending=False)
-        away = df_f[df_f["away_team"] == t].sort_values("match_date", ascending=False)
-
-        if home.empty and away.empty: continue
-
-        row = home.iloc[0] if (not home.empty and (away.empty or home.iloc[0]["match_date"] >= away.iloc[0]["match_date"])) else away.iloc[0]
-        prefix = "home_" if row["home_team"] == t else "away_"
-
-        try:
-            xg_for = row.get(f"{prefix}roll_xg_for_5", 0)
-            xg_ag = row.get(f"{prefix}roll_xg_against_5", 0)
-            goals_for = row.get(f"{prefix}roll_goals_for_5", 0)
-        except: continue
-
-        ranking.append({
-            "time": t,
-            "net_xg_5": round(xg_for - xg_ag, 2),
-            "performance_diff_5": round(goals_for - xg_for, 2),
-            "xg_for_5": round(xg_for, 2),
-        })
-
-    if not ranking: return {"erro": "Dados insuficientes."}
-
-    df_r = pd.DataFrame(ranking)
-    df_forca = df_r.sort_values("net_xg_5", ascending=False).head(n).reset_index(drop=True)
-    df_valor = df_r.sort_values("performance_diff_5", ascending=False).head(n).reset_index(drop=True)
-
-    df_forca["rank"] = df_forca.index + 1
-    df_valor["rank"] = df_valor.index + 1
-
-    return {
-        "data_referencia": data_base,
-        "ranking_forca": df_forca.to_dict("records"),
-        "ranking_valor": df_valor.to_dict("records"),
-    }
-
-# ====================================================================================================
-# CARREGAMENTO AUTOMÁTICO
-# ====================================================================================================
+# Inicializa
 carregar_componentes()
