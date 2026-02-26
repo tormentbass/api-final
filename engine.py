@@ -37,7 +37,23 @@ def carregar_componentes():
         return False
 
 # ==============================================================================
-# FUNÇÃO DE FORMATAÇÃO PARA TELEGRAM
+# LÓGICA DE ANÁLISE DE GOLS
+# ==============================================================================
+def analisar_tendencia_gols(net_c, net_f):
+    """Analisa a tendência de gols baseada no saldo de xG das duas equipes"""
+    expectativa_total = net_c + net_f
+    
+    if expectativa_total > 1.2:
+        return "Tendência: Over 2.5 Gols 🔥"
+    elif expectativa_total > 0.4:
+        return "Tendência: Over 1.5 Gols 📈"
+    elif expectativa_total < -0.8:
+        return "Tendência: Under 2.5 Gols 🛡️"
+    else:
+        return "Tendência: Equilibrada (Jogo Estudado) ⚖️"
+
+# ==============================================================================
+# FUNÇÃO DE FORMATAÇÃO PARA TELEGRAM (MELHORADA)
 # ==============================================================================
 def gerar_texto_telegram(dados):
     """Transforma os dados da análise em uma mensagem formatada para o Telegram"""
@@ -45,29 +61,30 @@ def gerar_texto_telegram(dados):
     ia_prob = p["probabilidades_ia"]
     mercado = p["probabilidades_mercado"]
     resultado = p["resultado"]
+    gols = dados.get("analise_gols", "Tendência: Em análise")
     
-    # Define o emoji baseado no resultado escolhido pela IA
     emoji = "🏠" if "Casa" in resultado else ("🚌" if "Fora" in resultado else "🤝")
     
-    # Pega a probabilidade da IA para o resultado escolhido
     prob_vitoria_ia = ia_prob['casa'] if "Casa" in resultado else (ia_prob['fora'] if "Fora" in resultado else ia_prob['empate'])
 
     texto = (
         f"🎯 **PALPITE DO DIA**\n\n"
         f"⚽ **Jogo:** {dados['partida']}\n"
-        f"✅ **Entrada Sugerida:** {resultado} {emoji}\n\n"
+        f"✅ **Entrada Sugerida:** {resultado} {emoji}\n"
+        f"⚽ **Mercado de Gols:** {gols}\n\n"
         f"📊 **Análise Pro-IA:**\n"
         f"🤖 Confiança da IA: {prob_vitoria_ia}\n"
     )
     
-    # Se houver dados do mercado, adiciona ao texto
     if isinstance(mercado, dict):
-        prob_m = mercado.get('casa' if "Casa" in resultado else 'fora' if "Fora" in resultado else 'empate', "N/A")
+        # Mapeia a key correta para buscar a prob do mercado
+        chave_m = 'casa' if "Casa" in resultado else 'fora' if "Fora" in resultado else 'empate'
+        prob_m = mercado.get(chave_m, "N/A")
         texto += f"🏦 Probabilidade das Casas: {prob_m}\n"
     
     texto += (
         f"\n💎 **Veredito:** {dados['confianca_modelo']}\n"
-        f"📈 *Análise baseada em Net xG e volume de mercado.*"
+        f"📈 *Análise baseada em Net xG e volume estatístico.*"
     )
     return texto
 
@@ -157,6 +174,11 @@ def gerar_relatorio_json(time_casa, time_fora, data_ref):
         res_map = {0: "Empate", 1: "Vitória Fora", 2: "Vitória Casa"}
         resultado_ia = res_map.get(pred_idx)
         
+        # Análise de Gols baseada no Net xG
+        net_c = float(feat["net_c"])
+        net_f = float(feat["net_f"])
+        tendencia_gols = analisar_tendencia_gols(net_c, net_f)
+
         confianca = "Normal"
         if mercado:
             key_m = "valor_casa" if pred_idx == 2 else ("valor_fora" if pred_idx == 1 else "valor_empate")
@@ -173,14 +195,19 @@ def gerar_relatorio_json(time_casa, time_fora, data_ref):
             "status": "SUCESSO",
             "partida": f"{time_casa} vs {time_fora}",
             "confianca_modelo": confianca,
+            "analise_gols": tendencia_gols,
             "previsao_final": {
                 "resultado": resultado_ia,
                 "probabilidades_ia": {"casa": f"{probs[2]*100:.2f}%", "empate": f"{probs[0]*100:.2f}%", "fora": f"{probs[1]*100:.2f}%"},
                 "probabilidades_mercado": mercado_limpo
+            },
+            "estatisticas_base": {
+                "net_xg_casa": round(net_c, 2),
+                "net_xg_fora": round(net_f, 2)
             }
         }
         
-        # O TOQUE FINAL: Texto pronto para o Telegram
+        # Adiciona o texto pronto para o Telegram
         relatorio["copy_telegram"] = gerar_texto_telegram(relatorio)
         
         return relatorio
