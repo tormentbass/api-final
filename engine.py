@@ -3,7 +3,7 @@ import numpy as np
 import joblib
 import os
 import xgboost as xgb
-import requests  # Import necessário para a API de Odds
+import requests
 
 # ==============================================================================
 # CONFIGURAÇÃO DE CAMINHOS E CHAVES
@@ -11,7 +11,7 @@ import requests  # Import necessário para a API de Odds
 MODEL_PATH = "models/xgb_model.json" 
 FEATURES_PATH = "models/features_finais.pkl"
 HISTORICO_PATH = "models/df_historico_api.parquet"
-ODDS_API_KEY = "179289ff6d63366f8af6b9de37fd9d7e" # Sua chave ativa
+ODDS_API_KEY = "179289ff6d63366f8af6b9de37fd9d7e"
 
 model = None
 features_finais = None
@@ -33,39 +33,57 @@ def carregar_componentes():
             return True
         return False
     except Exception as e:
-        print(f"Erro carga: {e}")
+        print(f"❌ Erro carga: {e}")
         return False
 
 # ==============================================================================
-# FUNÇÃO PARA BUSCAR ODDS EM TEMPO REAL
+# FUNÇÃO PARA BUSCAR ODDS EM TEMPO REAL (MELHORADA)
 # ==============================================================================
 def buscar_odds_mercado(time_casa, time_fora):
-    """Consulta a The Odds API para pegar a probabilidade implícita das casas"""
-    # Lista de ligas para buscar (Premier League, etc). Pode ser ajustado conforme a necessidade.
-    leagues = ['soccer_england_league1', 'soccer_brazil_campeonato_brasileiro', 'soccer_uefa_champs_league']
+    """Consulta a The Odds API focando na Premier League (plano free)"""
+    # soccer_epl ou soccer_england_league1 são os códigos padrão para Premier League
+    leagues = ['soccer_epl', 'soccer_england_league1']
     
     try:
         for league in leagues:
-            url = f'https://api.the-odds-api.com/v4/sports/{league}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h'
-            response = requests.get(url)
+            # Adicionado oddsFormat=decimal para facilitar a vida
+            url = f'https://api.the-odds-api.com/v4/sports/{league}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal'
+            response = requests.get(url, timeout=10)
+            
             if response.status_code == 200:
                 data = response.json()
+                if not data: continue
+                
                 for jogo in data:
-                    # Tenta encontrar o jogo por nome aproximado
-                    if time_casa.lower() in jogo['home_team'].lower() or time_fora.lower() in jogo['away_team'].lower():
+                    h_api = jogo['home_team'].lower()
+                    a_api = jogo['away_team'].lower()
+                    tc = time_casa.lower()
+                    tf = time_fora.lower()
+
+                    # Verifica se um dos nomes bate (contém o termo buscado)
+                    if tc in h_api or tf in a_api or h_api in tc or a_api in tf:
                         if not jogo['bookmakers']: continue
                         
+                        # Pegamos a primeira casa de apostas disponível
                         outcomes = jogo['bookmakers'][0]['markets'][0]['outcomes']
                         probs_mercado = {}
+                        
                         for o in outcomes:
-                            # Converte decimal em %
                             prob = (1 / o['price']) * 100
-                            if o['name'] == jogo['home_team']: probs_mercado['casa'] = prob
-                            elif o['name'] == jogo['away_team']: probs_mercado['fora'] = prob
-                            else: probs_mercado['empate'] = prob
+                            # Mapeia os nomes da API de volta para nossas chaves
+                            if o['name'] == jogo['home_team']: 
+                                probs_mercado['casa'] = f"{prob:.2f}%"
+                                probs_mercado['valor_casa'] = prob # p/ cálculo de confiança
+                            elif o['name'] == jogo['away_team']: 
+                                probs_mercado['fora'] = f"{prob:.2f}%"
+                                probs_mercado['valor_fora'] = prob
+                            else: 
+                                probs_mercado['empate'] = f"{prob:.2f}%"
+                                probs_mercado['valor_empate'] = prob
                         return probs_mercado
         return None
-    except:
+    except Exception as e:
+        print(f"⚠️ Erro API Odds: {e}")
         return None
 
 def get_latest_features(time_casa, time_fora, data_ref):
@@ -131,38 +149,47 @@ def gerar_relatorio_json(time_casa, time_fora, data_ref):
         prob_empate_ia = probs[0] * 100
         prob_fora_ia = probs[1] * 100
         
-        # 2. Busca Odds Reais para calibração
+        # 2. Busca Odds Reais
         mercado = buscar_odds_mercado(time_casa, time_fora)
         
-        # Lógica de Confiança (Se a IA for muito longe do mercado, a gente 'avisa')
+        # 3. Lógica de Confiança Calibrada
         confianca = "Normal"
-        if mercado:
-            # Pega a probabilidade do resultado previsto pela IA no mercado
-            pred_idx = np.argmax(probs)
-            key_mercado = "casa" if pred_idx == 2 else ("fora" if pred_idx == 1 else "empate")
-            prob_m = mercado.get(key_mercado, 0)
-            
-            # Se a IA der > 90% mas o mercado < 70%, reduzimos a confiança exibida
-            if (probs[pred_idx] * 100) > 90 and prob_m < 70:
-                confianca = "Ajustada (IA Otimista)"
-            elif (probs[pred_idx] * 100) > prob_m + 15:
-                confianca = "Alta (Valor Detectado)"
-
+        pred_idx = np.argmax(probs)
         res_map = {0: "Empate", 1: "Vitória Fora", 2: "Vitória Casa"}
-        idx = np.argmax(probs)
-        
+        resultado_ia = res_map.get(pred_idx)
+
+        if mercado:
+            # Pega a probabilidade numérica do mercado para o resultado que a IA escolheu
+            key_m = "valor_casa" if pred_idx == 2 else ("valor_fora" if pred_idx == 1 else "valor_empate")
+            prob_m = mercado.get(key_m, 0)
+            
+            prob_ia_atual = probs[pred_idx] * 100
+            
+            # Filtros de segurança
+            if prob_ia_atual > 90 and prob_m < 70:
+                confianca = "Ajustada (IA Otimista)"
+            elif prob_ia_atual > (prob_m + 15):
+                confianca = "Alta (Valor Detectado)"
+            elif prob_ia_atual < (prob_m - 10):
+                confianca = "Moderada (Mercado Cético)"
+            
+            # Limpa os valores auxiliares para o JSON não ficar sujo
+            mercado_limpo = {k: v for k, v in mercado.items() if not k.startswith('valor_')}
+        else:
+            mercado_limpo = "Indisponível (API/Fora da Premier League)"
+
         return {
             "status": "SUCESSO",
             "partida": f"{time_casa} vs {time_fora}",
             "confianca_modelo": confianca,
             "previsao_final": {
-                "resultado": res_map.get(idx),
+                "resultado": resultado_ia,
                 "probabilidades_ia": {
                     "casa": f"{prob_casa_ia:.2f}%",
                     "empate": f"{prob_empate_ia:.2f}%",
                     "fora": f"{prob_fora_ia:.2f}%"
                 },
-                "probabilidades_mercado": mercado if mercado else "Indisponível (API)"
+                "probabilidades_mercado": mercado_limpo
             },
             "analise_estatistica": {
                 "net_xg_casa": round(float(feat["net_c"]), 2),
