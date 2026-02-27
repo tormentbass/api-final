@@ -8,6 +8,7 @@ import requests
 # ==============================================================================
 # CONFIGURAÇÃO DE CAMINHOS E CHAVES
 # ==============================================================================
+# Removidos espaços fantasmas nas strings abaixo:
 MODEL_PATH = "models/xgb_model.json"
 FEATURES_PATH = "models/features_finais.pkl"
 HISTORICO_PATH = "models/df_historico_api.parquet"
@@ -40,9 +41,7 @@ def carregar_componentes():
 # LÓGICA DE ANÁLISE DE GOLS
 # ==============================================================================
 def analisar_tendencia_gols(net_c, net_f):
-    """Analisa a tendência de gols baseada no saldo de xG das duas equipes"""
     expectativa_total = net_c + net_f
-    
     if expectativa_total > 1.2:
         return "Tendência: Over 2.5 Gols 🔥"
     elif expectativa_total > 0.4:
@@ -53,10 +52,9 @@ def analisar_tendencia_gols(net_c, net_f):
         return "Tendência: Equilibrada (Jogo Estudado) ⚖️"
 
 # ==============================================================================
-# FUNÇÃO DE FORMATAÇÃO PARA TELEGRAM (MELHORADA)
+# FUNÇÃO DE FORMATAÇÃO PARA TELEGRAM
 # ==============================================================================
 def gerar_texto_telegram(dados):
-    """Transforma os dados da análise em uma mensagem formatada para o Telegram"""
     p = dados["previsao_final"]
     ia_prob = p["probabilidades_ia"]
     mercado = p["probabilidades_mercado"]
@@ -65,7 +63,12 @@ def gerar_texto_telegram(dados):
     
     emoji = "🏠" if "Casa" in resultado else ("🚌" if "Fora" in resultado else "🤝")
     
-    prob_vitoria_ia = ia_prob['casa'] if "Casa" in resultado else (ia_prob['fora'] if "Fora" in resultado else ia_prob['empate'])
+    # Busca a probabilidade correta
+    if "Casa" in resultado: chave = 'casa'
+    elif "Fora" in resultado: chave = 'fora'
+    else: chave = 'empate'
+    
+    prob_vitoria_ia = ia_prob.get(chave, "N/A")
 
     texto = (
         f"🎯 **PALPITE DO DIA**\n\n"
@@ -77,9 +80,7 @@ def gerar_texto_telegram(dados):
     )
     
     if isinstance(mercado, dict):
-        # Mapeia a key correta para buscar a prob do mercado
-        chave_m = 'casa' if "Casa" in resultado else 'fora' if "Fora" in resultado else 'empate'
-        prob_m = mercado.get(chave_m, "N/A")
+        prob_m = mercado.get(chave, "N/A")
         texto += f"🏦 Probabilidade das Casas: {prob_m}\n"
     
     texto += (
@@ -89,7 +90,7 @@ def gerar_texto_telegram(dados):
     return texto
 
 # ==============================================================================
-# FUNÇÃO PARA BUSCAR ODDS EM TEMPO REAL
+# FUNÇÃO PARA BUSCAR ODDS
 # ==============================================================================
 def buscar_odds_mercado(time_casa, time_fora):
     leagues = ['soccer_epl', 'soccer_england_league1']
@@ -120,8 +121,7 @@ def buscar_odds_mercado(time_casa, time_fora):
                                 probs_mercado['valor_empate'] = prob
                         return probs_mercado
         return None
-    except Exception as e:
-        print(f"⚠️ Erro API Odds: {e}")
+    except Exception:
         return None
 
 def get_latest_features(time_casa, time_fora, data_ref):
@@ -174,7 +174,6 @@ def gerar_relatorio_json(time_casa, time_fora, data_ref):
         res_map = {0: "Empate", 1: "Vitória Fora", 2: "Vitória Casa"}
         resultado_ia = res_map.get(pred_idx)
         
-        # Análise de Gols baseada no Net xG
         net_c = float(feat["net_c"])
         net_f = float(feat["net_f"])
         tendencia_gols = analisar_tendencia_gols(net_c, net_f)
@@ -189,7 +188,7 @@ def gerar_relatorio_json(time_casa, time_fora, data_ref):
             elif prob_ia < (prob_m - 10): confianca = "Moderada (Mercado Cético)"
             mercado_limpo = {k: v for k, v in mercado.items() if not k.startswith('valor_')}
         else:
-            mercado_limpo = "Indisponível (API/Fora da Premier League)"
+            mercado_limpo = "Indisponível"
 
         relatorio = {
             "status": "SUCESSO",
@@ -206,10 +205,7 @@ def gerar_relatorio_json(time_casa, time_fora, data_ref):
                 "net_xg_fora": round(net_f, 2)
             }
         }
-        
-        # Adiciona o texto pronto para o Telegram
         relatorio["copy_telegram"] = gerar_texto_telegram(relatorio)
-        
         return relatorio
     except Exception as e:
         return {"status": "ERRO", "mensagem": str(e)}
