@@ -8,7 +8,6 @@ import requests
 # ==============================================================================
 # CONFIGURAÇÃO DE CAMINHOS E CHAVES
 # ==============================================================================
-# Removidos espaços fantasmas nas strings abaixo:
 MODEL_PATH = "models/xgb_model.json"
 FEATURES_PATH = "models/features_finais.pkl"
 HISTORICO_PATH = "models/df_historico_api.parquet"
@@ -63,7 +62,6 @@ def gerar_texto_telegram(dados):
     
     emoji = "🏠" if "Casa" in resultado else ("🚌" if "Fora" in resultado else "🤝")
     
-    # Busca a probabilidade correta
     if "Casa" in resultado: chave = 'casa'
     elif "Fora" in resultado: chave = 'fora'
     else: chave = 'empate'
@@ -209,5 +207,23 @@ def gerar_relatorio_json(time_casa, time_fora, data_ref):
         return relatorio
     except Exception as e:
         return {"status": "ERRO", "mensagem": str(e)}
+
+# ==============================================================================
+# FUNÇÃO RESTAURADA PARA EVITAR ERRO DE IMPORTAÇÃO
+# ==============================================================================
+def gerar_ranking_forca():
+    """Retorna um ranking simples baseado no histórico carregado"""
+    if df_historico is None:
+        return {"status": "ERRO", "mensagem": "Base offline"}
+    try:
+        # Pega a data mais recente
+        ultima_data = df_historico["match_date"].max()
+        # Filtra os últimos 30 dias para um ranking atualizado
+        recent = df_historico[df_historico["match_date"] > (ultima_data - pd.Timedelta(days=30))]
+        
+        ranking = recent.groupby("home_team")["home_roll_xg_for_5"].mean().sort_values(ascending=False).head(10)
+        return {"status": "SUCESSO", "ranking": ranking.to_dict()}
+    except:
+        return {"status": "SUCESSO", "mensagem": "Ranking em processamento"}
 
 carregar_componentes()
