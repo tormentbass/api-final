@@ -8,7 +8,7 @@ import requests
 # ==============================================================================
 # CONFIGURAÇÃO DE CAMINHOS E CHAVES
 # ==============================================================================
-MODEL_PATH = "models/xgb_model.json" 
+MODEL_PATH = "models/xgb_model.json"
 FEATURES_PATH = "models/features_finais.pkl"
 HISTORICO_PATH = "models/df_historico_api.parquet"
 ODDS_API_KEY = "179289ff6d63366f8af6b9de37fd9d7e"
